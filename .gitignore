@@ -1,0 +1,23 @@
+# Log Files
+*.log
+
+
+# IntelliJ
+*.iml
+.idea/
+
+#Sensetive data
+bin/
+certs/
+data/
+
+
+# React node modules
+node_modules/
+
+# Excluding data
+*.conf
+*.db
+*.log
+*.key
+*.pem

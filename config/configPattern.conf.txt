@@ -1,0 +1,27 @@
+FILENAME should be "logs.conf" !!!
+[Logger]
+  Path = "" //string, path to folder where Application Logfile should be created
+
+[Logs]
+  Path = "" //string, path to folder with Logfiles which Application will read
+  PathDB = "" //string, path to Logs Database file
+  ReadCycle = "" //string, set read interval like this: "1h15m30s"
+
+[Secret]
+  AccessSecret = "" //string, any string to sign AccessToken
+
+[Server]
+  Domain = "" //string, set domain name that will be assigned to cookie file (used by templates)
+  MaxAge = 60 // int, set amount of Days until cookie file expires
+  Port = 5000 //int, sets Server port number
+
+[Templates]
+  Path = "./web/react_app" //string Path to Frontend templates (React)
+
+[TLS]
+  Certificate = "" //string, path to Certificate
+  Enable = true //bool, set TLS enabled
+  Key = "" //string, path to Key
+
+[UsersDB]
+  PathDb = "" //string, path to Users Database file

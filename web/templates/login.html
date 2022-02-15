@@ -1,0 +1,126 @@
+<html>
+<head>
+    <title>Login</title>
+  <style>
+    body, html {
+     background-color: aliceblue;
+     height: 100%;
+     margin: 0;
+    }
+    .link {
+        float: right;
+        padding-right: 50px;
+    }
+      #box {
+          padding-left:50px;
+          font-size:12px;
+          font-family: Arial;
+          border: 0px solid black;
+          background: white;
+          height: 325px;
+          width: 5000px;
+          border-radius: 15px;"
+      }
+      #titleText{
+          color: #507CAD;
+          font-weight: 500;
+          font-size: 20px;
+      }
+      #username{
+          color: #507CAD;
+          font-weight: 600;
+          font-size: 12px;
+          outline: none;
+      }
+      #inputUsername{
+          margin-top: 10px;
+          background-position: 5px 5px;
+          border-radius: 15px;
+          outline: none;
+          background-size: 10px 10px;
+          background-color: #F2F2F2;
+          border: 0.00em solid gray;
+          height:50px;
+          width:290px;
+          padding-left: 20px;
+          background-repeat: no-repeat;
+      }
+      #passText{
+          color: #507CAD;
+          font-weight: 600;
+          font-size: 12px
+      }
+      #passInput{
+          margin-top: 10px;
+          background-position: 5px 5px;
+          border-radius: 15px;
+          outline: none;
+          background-size: 10px 10px;
+          background-color: #F2F2F2;
+          border: 0.00em solid gray;
+          height:50px;
+          width:290px;
+          padding-left: 20px;
+          background-repeat: no-repeat;
+      }
+      #subButton{
+          font-family: Arial;
+          font-size : 14px;
+          color: #FFFFFF; width: 290px;
+          border-radius: 25px;
+          height: 40px;
+          background-color:#507CAD;
+          outline: none;
+          border: 0.01em solid black;
+      }
+    #regButton{
+        font-family: Arial;
+        font-size : 14px;
+        color: #FFFFFF; width: 290px;
+        border-radius: 25px;
+        height: 40px;
+        background-color: darkcyan;
+        outline: none;
+        border: 0.01em solid black;
+    }
+
+
+
+  </style>
+</head>
+<body>
+  <center>
+<table width = 400 border =0 style = "border: 0px solid black;">
+  <tr height=100>
+    <td>
+
+    </td>
+  </tr>
+  <tr height=20>
+ <td>   
+  </tr>
+
+  <tr>
+
+    <td id="box">
+     <p><span id="titleText";>HSM Wallet Logs Access</span>
+      <br>
+
+      <form method="post" action="/v1/loginAttempt">
+            <!--   <p><span id="username">User name</span> -->
+              <input id="inputUsername" placeholder="Username" name="login" type="text"><br>
+            <!--   <p><span id="passText">Password</span> -->
+                <input id="passInput" placeholder="Password" name="password" type="password"><br><br><br>
+                <button type="submit" id="subButton">
+                  Log in</button>
+              </form>
+                    <div class="link">
+                    <a href="/v1/registration">
+                        Registration</a>
+                </div>
+            </td>
+          </tr>
+        </table>
+          </center>
+        </body>
+        </html>

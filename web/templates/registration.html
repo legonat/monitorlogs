@@ -1,0 +1,135 @@
+<html>
+<head>
+    <title>Registration</title>
+  <style>
+    body, html {
+     background-color: aliceblue;
+     height: 100%;
+     margin: 0;
+    }
+      #box {
+          padding-left:50px;
+          font-size:12;
+          font-family: Arial;
+          border: 0px solid black;
+          background: white;
+          height: 400px;
+          width: 5000px;
+          border-radius: 15px;"
+      }
+      #titleText{
+          color: #507CAD;
+          font-weight: 500;
+          font-size: 20
+      }
+      #username{
+          color: #507CAD;
+          font-weight: 600;
+          font-size: 12;
+          outline: none;
+      }
+      #inputUsername{
+          margin-top: 10px;
+          background-position: 5px 5px;
+          border-radius: 15px;
+          outline: none;
+          background-size: 10px 10px;
+          background-color: #F2F2F2;
+          border: 0.00em solid gray;
+          height:50px;
+          width:290px;
+          padding-left: 20px;
+          background-repeat: no-repeat;
+      }
+      #passText{
+          color: #507CAD;
+          font-weight: 600;
+          font-size: 12
+      }
+       #password, #confirm_password{
+          margin-top: 10px;
+          background-position: 5px 5px;
+          border-radius: 15px;
+          outline: none;
+          background-size: 10px 10px;
+          background-color: #F2F2F2;
+          border: 0.00em solid gray;
+          height:50px;
+          width:290px;
+          padding-left: 20px;
+          background-repeat: no-repeat;
+      }
+      #subButton{
+          font-family: Arial;
+          font-size : 14px;
+          color: #FFFFFF; width: 290;
+          border-radius: 25px;
+          height: 40px;
+          background-color:#507CAD;
+          outline: none;
+          border: 0.01em solid black;
+      }
+    #loginButton{
+        font-family: Arial;
+        font-size : 14px;
+        color: #FFFFFF; width: 290;
+        border-radius: 25px;
+        height: 40px;
+        background-color: darkcyan;
+        outline: none;
+        border: 0.01em solid black;
+    }
+
+
+
+  </style>
+</head>
+<body>
+  <center>
+<table width = 400 border =0 style = "border: 0px solid black;">
+  <tr height=100>
+    <td>
+
+    </td>
+  </tr>
+  <tr height=20>
+ <td>   
+  </tr>
+
+  <tr>
+    <td id="box">
+     <p><span id="titleText">HSM Wallet Logs Registration</span>
+      <br>
+    <br>
+      <form class="pure-form" method="post" action="/v1/register">
+        <input id="inputUsername" placeholder="Username" name="login" type="text"><br>
+            <input type="password" placeholder="Password" name="password" id="password" required> <br>
+            <input type="password" placeholder="Confirm Password" id="confirm_password" required>
+            <br><br><br>
+        <button type="submit" id="subButton">
+          Register</button>
+      </form>
+
+        <script>
+            var password = document.getElementById("password")
+                , confirm_password = document.getElementById("confirm_password");
+
+            function validatePassword(){
+                if(password.value != confirm_password.value) {
+                    confirm_password.setCustomValidity("Passwords Don't Match");
+                } else {
+                    confirm_password.setCustomValidity('');
+                }
+            }
+
+            password.onchange = validatePassword;
+            confirm_password.onkeyup = validatePassword;
+        </script>
+
+      
+    </td>
+  </tr>
+</table>
+  </center>
+</body>
+</html>

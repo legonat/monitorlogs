@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Success</title>
+    <style>
+        #logoutButton{
+            font-family: Arial;
+            font-size : 14px;
+            color: #FFFFFF; width: 290px;
+            border-radius: 2px;
+            height: 40px;
+            background-color: darkcyan;
+            outline: none;
+            border: 0.01em solid black;
+        }
+    </style>
+
+
+</head>
+<body>
+<form action="/v1/logout">
+    <h1>Hello {{.login}}</h1>
+    <button type="submit" id="logoutButton">
+        Log out</button>
+</form>
+<input type="button" onclick="checkAt()">Check</input>
+
+<div id="new">
+    <p id="p1">At</p>
+</div>
+<script>
+
+    function checkAt(){
+        var rp = require('request-promise');
+        options = {
+            method: POST,
+            uri: '/v1/unblock',
+            headers: {
+                Authorization: "Bearer " + {{.at}}
+            },
+            body : {
+                "user": "test4"
+            }
+        }
+        rp(options).then(function(response)
+            {
+                if(response.status!==200)
+                {
+                    throw new Error(response.status)
+                }
+            });
+        }
+
+    fetch("/v1/auth")
+        .then(function(response)
+        {
+            if(response.status!==200)
+            {
+                throw new Error(response.status)
+            }
+        })
+        .catch(function(error)
+        {
+            if (response.status === 401)
+            {
+                window.location.replace("/v1/login")
+            }
+        });
+
+    var at = {{.at}}
+    var tag = document.createElement("p");
+    var text = document.createTextNode(at);
+    tag.appendChild(text);
+    var element = document.getElementById("new");
+    element.appendChild(tag);
+</script>
+</body>
+</html>
