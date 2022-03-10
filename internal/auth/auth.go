@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
 	"math/rand"
-	"monitorlogs/internal/db"
 	"monitorlogs/internal/models"
 	"monitorlogs/pkg/erx"
 	"monitorlogs/pkg/tools"
@@ -56,21 +55,11 @@ func ParseToken(tokenStr string) (string, error) {
 	return "", erx.NewError(610, "Invalid Access Token")
 }
 
-func RefreshSession(login string, ua string, fingerprint string, ip string, daysUntilExpire int) (string, string, error) {
-
-	//login, err := db.CheckRefreshToken(token, fingerprint, ip)
-	//if err != nil {
-	//	return "", "", erx.New(err)
-	//}
+func RefreshSession(inputs models.RefreshSession, daysUntilExpire int) (string, string, error) {
 
 	newRefToken, err := CreateRefreshToken()
 
-	err = db.WriteRefreshToken(login, newRefToken, ua, fingerprint, ip, daysUntilExpire)
-	if err != nil {
-		return "", "", erx.New(err)
-	}
-
-	newAccessToken, err := CreateAccessToken(login)
+	newAccessToken, err := CreateAccessToken(inputs.Login)
 	if err != nil {
 		return "", "", erx.New(err)
 	}

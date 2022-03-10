@@ -1,4 +1,4 @@
-package logreader
+package db
 
 import (
 	"bufio"
@@ -7,7 +7,6 @@ import (
 	"github.com/kennygrant/sanitize"
 	"io"
 	"monitorlogs/internal/config"
-	"monitorlogs/internal/db"
 	"monitorlogs/internal/models"
 	"monitorlogs/pkg/erx"
 	"monitorlogs/pkg/tools"
@@ -30,7 +29,7 @@ func newLogStruct() models.LogStruct {
 	}
 }
 
-func ReadFolder(folderPath string) {
+func (r *LogsDbSqlite) ReadFolder(folderPath string) {
 	var files []string
 
 	err := filepath.Walk(folderPath, func(path string, info os.FileInfo, err error) error {
@@ -49,14 +48,14 @@ func ReadFolder(folderPath string) {
 	}
 
 	for _, fileName := range files {
-		err = Read(switchPrefix() + fileName)
+		err = r.Read(switchPrefix() + fileName)
 		if err != nil {
 			tools.LogErr(erx.New(err))
 		}
 	}
 }
 
-func ReadCycle(duration string, folderPath string) {
+func (r *LogsDbSqlite) ReadCycle(duration string, folderPath string) {
 	parsedDuration, err := time.ParseDuration(duration)
 	if err != nil {
 		tools.LogErr(erx.New(err))
@@ -83,7 +82,7 @@ func ReadCycle(duration string, folderPath string) {
 		start := time.Now()
 		for _, fileName := range files {
 			if strings.Contains(fileName, ".log") {
-				err = Read(switchPrefix() + fileName)
+				err = r.Read(switchPrefix() + fileName)
 				if err != nil {
 					tools.LogErr(erx.New(err))
 				}
@@ -98,7 +97,7 @@ func ReadCycle(duration string, folderPath string) {
 	}
 }
 
-func Read(fullFilename string) error {
+func (r *LogsDbSqlite) Read(fullFilename string) error {
 
 	stat, err := os.Stat(fullFilename)
 	if err != nil {
@@ -150,7 +149,7 @@ func Read(fullFilename string) error {
 	if curLength64 > prevLength64 {
 
 		if isNewFile {
-			logInfo, err := db.GetLogsFileInfo(filename)
+			logInfo, err := r.GetLogsFileInfo(filename)
 			if err == sql.ErrNoRows {
 				tools.LogInfo("New logfile is: " + filename)
 				isEmptyStart = true
@@ -189,9 +188,9 @@ func Read(fullFilename string) error {
 			return err
 		}
 		var buf strings.Builder
-		r := bufio.NewReader(file)
+		reader := bufio.NewReader(file)
 		for {
-			line, prefix, err := r.ReadLine()
+			line, prefix, err := reader.ReadLine()
 			if err == io.EOF {
 				fmt.Printf("End Of File: %s", err)
 				break
@@ -279,14 +278,14 @@ func Read(fullFilename string) error {
 
 		if isNewFile {
 
-			err = db.CreateLogDatabase(filename)
+			err = r.CreateLogDatabase(filename)
 			if err != nil {
 				tools.LogErr(erx.New(err))
 				return err
 			}
 
 			tools.LogInfo("Begin writing logs to DB")
-			rows, err := db.InsertLogs(logs, filename+"_logs")
+			rows, err := r.InsertLogs(logs, filename+"_logs")
 			if err != nil {
 				tools.LogErr(erx.New(err))
 				return err
@@ -295,7 +294,7 @@ func Read(fullFilename string) error {
 			fmt.Println("Rows affected: ", rows)
 
 			for _, v := range sessions {
-				err = db.InsertLogSession(v, filename)
+				err = r.InsertLogSession(v, filename)
 				if err != nil {
 					tools.LogErr(erx.New(err))
 					return err
@@ -303,7 +302,7 @@ func Read(fullFilename string) error {
 
 			}
 
-			err = db.InsertLogFileInfo(logfile)
+			err = r.InsertLogFileInfo(logfile)
 			if err != nil {
 				tools.LogErr(erx.New(err))
 				return err
@@ -319,7 +318,7 @@ func Read(fullFilename string) error {
 		}
 
 		tools.LogInfo("Begin writing logs to DB")
-		rows, err := db.InsertLogs(logs, filename+"_logs")
+		rows, err := r.InsertLogs(logs, filename+"_logs")
 		if err != nil {
 			tools.LogErr(erx.New(err))
 			return err
@@ -328,7 +327,7 @@ func Read(fullFilename string) error {
 		fmt.Println("Rows affected: ", rows)
 
 		for _, sessionStruct := range sessions {
-			err = db.InsertLogSession(sessionStruct, filename)
+			err = r.InsertLogSession(sessionStruct, filename)
 			if err != nil {
 				tools.LogErr(erx.New(err))
 				return err
@@ -336,7 +335,7 @@ func Read(fullFilename string) error {
 
 		}
 
-		err = db.UpdateLogFileInfo(logfile)
+		err = r.UpdateLogFileInfo(logfile)
 		if err != nil {
 			tools.LogErr(erx.New(err))
 			return err

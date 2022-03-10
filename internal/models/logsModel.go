@@ -32,12 +32,8 @@ type LogFilenameStruct struct {
 }
 
 type ErrorStruct struct {
-	Id			int		`json:"id"`
+	LogStruct
 	LogId		int		`json:"logId"`
-	SessionId	int		`json:"sessionId"`
-	Date        int64	`json:"date"`
-	ServiceInfo string	`json:"service"`
-	Description string	`json:"description"`
 }
 
 type LogSessionStruct struct {

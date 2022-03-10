@@ -5,25 +5,19 @@ import "github.com/dgrijalva/jwt-go"
 type RegisterInputs struct{
 	Login 		string `json:"login" binding:"required"`
 	Password 	string `json:"password" binding:"required"`
+	Ip 			string
 }
 
 type LoginInputs struct{
 	Login 		string	`json:"login" binding:"required"`
 	Password 	string	`json:"password" binding:"required"`
 	RememberMe	bool	`json:"rememberMe"`
-	//Fingerprint string `json:"fingerprint" binding:"required"`
+	Ip 			string
 }
-
-//type CheckInputs struct {
-//	Login 		string `json:"login" binding:"required"`
-//	Password 	string `json:"password" binding:"required"`
-//	Fingerprint string `json:"fingerprint" binding:"required"`
-//}
 
 type BlockInputs struct {
 	Login 		string `json:"login" binding:"required"`
-	//Ip 			string `json:"ip" binding:"required"`
-	//AccessToken string `json:"accessToken" binding:"required"`
+	Ip	 		string
 }
 
 type UnblockInputs struct {

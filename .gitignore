@@ -21,3 +21,5 @@ node_modules/
 *.log
 *.key
 *.pem
+*.exe
+*json

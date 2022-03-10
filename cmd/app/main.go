@@ -1,21 +1,20 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"flag"
 	"fmt"
-	"github.com/gin-contrib/cors"
-	"github.com/gin-gonic/contrib/static"
-	"github.com/gin-gonic/gin"
-	"monitorlogs/internal/api/middleware"
-	v1 "monitorlogs/internal/api/v1"
-	"monitorlogs/internal/api/v2"
 	"monitorlogs/internal/config"
 	"monitorlogs/internal/db"
-	"monitorlogs/internal/logreader"
+	"monitorlogs/internal/handler"
+	"monitorlogs/internal/server"
 	"monitorlogs/pkg/erx"
 	"monitorlogs/pkg/tools"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 )
 
 func init() {
@@ -34,6 +33,7 @@ func main() {
 	path := flag.String("p", "./data/", "Specify PATH (to Database Folder or to Folder with logs)")
 	fileName := flag.String("fn", `.\data\debug.log`, "Specify Filename of file to read (with single backslash)")
 	flag.Parse()
+
 
 	switch *function {
 	case "initUsersDb":
@@ -65,29 +65,69 @@ func main() {
 			}
 		}
 	case "read":
-		err := logreader.Read(*fileName)
+		usersDb, err := db.NewSqliteDB(os.Getenv("USERS_PATH_DB"))
+		if err != nil {
+			tools.LogErr(erx.New(err))
+			return
+		}
+		defer usersDb.Close()
+		logfilesDb, err := db.NewSqliteDB(os.Getenv("LOGS_PATH_DB"))
+		if err != nil {
+			tools.LogErr(erx.New(err))
+			return
+		}
+		defer logfilesDb.Close()
+
+		repos := db.NewRepository(logfilesDb, usersDb)
+		err = repos.Read(*fileName)
 		if err != nil {
 			tools.LogErr(erx.New(err))
 		}
 	case "readFolder":
-		logreader.ReadFolder(*path)
+		usersDb, err := db.NewSqliteDB(os.Getenv("USERS_PATH_DB"))
+		if err != nil {
+			tools.LogErr(erx.New(err))
+			return
+		}
+		defer usersDb.Close()
+		logfilesDb, err := db.NewSqliteDB(os.Getenv("LOGS_PATH_DB"))
+		if err != nil {
+			tools.LogErr(erx.New(err))
+			return
+		}
+		defer logfilesDb.Close()
+
+		repos := db.NewRepository(logfilesDb, usersDb)
+		repos.ReadFolder(*path)
 	case "server":
-		r := gin.Default()
 
 		conf, err := config.GetConfig()
 		if err != nil {
-			erx.New(err)
+			tools.LogErr(erx.New(err))
 			return
 		}
 
-		logfiles, err := db.GetLogsFilesInfo()
+		usersDb, err := db.NewSqliteDB(os.Getenv("USERS_PATH_DB"))
+		if err != nil {
+			tools.LogErr(erx.New(err))
+			return
+		}
+		logfilesDb, err := db.NewSqliteDB(os.Getenv("LOGS_PATH_DB"))
+		if err != nil {
+			tools.LogErr(erx.New(err))
+			return
+		}
+
+		repos := db.NewRepository(logfilesDb, usersDb)
+		mainHandler := handler.NewHandler(repos)
+
+		logfiles, err := repos.GetLogsFilesInfo()
 		if err == sql.ErrNoRows {
 			tools.LogWarn("NO LOGS INFO FOUND!")
 			logfiles = nil
 		}
 		if err != nil {
 			tools.LogErr(erx.New(err))
-			erx.New(err)
 			return
 		}
 		err = config.SetLogfilesEnv(logfiles)
@@ -96,77 +136,48 @@ func main() {
 			return
 		}
 
-		go logreader.ReadCycle(conf.Logs.ReadCycle, conf.Logs.Path)
-		r.Use(static.Serve("/", static.LocalFile(conf.Templates.Path, true)))
+		go repos.ReadCycle(conf.Logs.ReadCycle, conf.Logs.Path)
 
-		api1 := r.Group("/v1")
-		{
-			//api1.GET("/", v1.ShowMain)
-			api1.GET("/auth", v1.Auth)
-			api1.GET("/loginAttempt", v1.ShowLoginPage)
-			api1.GET("/logoutAttempt", v1.Logout)
-			api1.POST("/register1", v1.Register)
-			api1.GET("/registration", v1.ShowRegistrationPage)
-			api1.POST("/loginAttempt", v1.Login)
-			api1.POST("/unblock", v1.Unblock)
-		}
+		port := fmt.Sprintf("%v", conf.Server.Port)
 
-		api2 := r.Group("/v2")
-		{
-			api2.GET("/authAttempt", v2.Auth)
-			api2.POST("/loginAttempt", v2.Login)
-			api2.GET("/logoutAttempt", v2.Logout)
-			api2.POST("/registrationAttempt", v2.Register)
-		}
+		srv := new(server.Server)
 
-		authorized := r.Group("/v2/private")
-		authorized.Use(middleware.AuthJWT())
-		{
-			authorized.POST("/block", v2.Block)
-			authorized.POST("/unblock", v2.Unblock)
-			authorized.POST("/getLogsBySession", v2.GetLogsBySession)
-			authorized.POST("/getLogsByDate", v2.GetLogsByDate)
-			authorized.POST("/getLogsBySessionWithLimit", v2.GetLogsBySessionWithLimit)
-			authorized.POST("/getLogsByDateWithLimit", v2.GetLogsByDateWithLimit)
-			authorized.POST("/getErrorsBySessionWithLimit", v2.GetErrorsBySessionWithLimit)
-			authorized.POST("/getErrorsByDateWithLimit", v2.GetErrorsByDateWithLimit)
-			authorized.POST("/findLogs", v2.FindLogs)
-			authorized.POST("/findLogsWithLimit", v2.FindLogsWithLimit)
-			authorized.POST("/getLogById", v2.GetLogById)
-			authorized.POST("/getLogsSessions", v2.GetLogsSessions)
-			authorized.POST("/getLogsServiceInfo", v2.GetLogsServiceInfo)
-			authorized.GET("/getLogsFilenames", v2.GetLogsFilenames)
-		}
-
-		//r.POST("/hsmauth/v1/block", v1.Block)
-		//r.POST("/hsmauth/v1/unblock", v1.Unblock)
-		//r.POST("/hsmauth/v1/exitAll", v1.ExitAll)
-
-		port := fmt.Sprintf(":%v", conf.Server.Port)
 		if conf.TLS.Enable {
-
 			SSLCRT := conf.TLS.Certificate
 			SSLKEY := conf.TLS.Key
 			tools.LogInfo("Starting TLS server")
-			err = r.RunTLS(port, SSLCRT, SSLKEY)
-			if err != nil {
-				tools.LogErr(erx.New(err))
-				return
-			}
+			go func() {
+				if err := srv.RunTLS(port, mainHandler.InitRoutes(), SSLCRT, SSLKEY); err != nil {
+					tools.LogErr(erx.New(err))
+				}
+			}()
+		} else {
+			go func() {
+				if err := srv.Run(port, mainHandler.InitRoutes()); err != nil {
+					tools.LogErr(erx.New(err))
+				}
+			}()
 		}
-		// TODO Make Dev/Prod separator
-		tools.LogWarn("Starting WITHOUT TLS server")
-		corsConf := cors.DefaultConfig()
-		corsConf.AllowOrigins = []string{"http://localhost:3000"}
-		corsConf.AllowCredentials = true
-		corsConf.AllowHeaders = []string{"Fingerprint", "X-Requested-With", "content-type", "Authorization", "Set-Cookie"}
-		corsConf.AllowMethods = []string{"GET", "POST"}
-		r.Use(cors.New(corsConf))
-		err = r.Run(port)
-		if err != nil {
+
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+		<-quit
+
+		tools.LogInfo("Monitorlogs Shutting Down")
+
+		if err := srv.Shutdown(context.Background()); err != nil {
 			tools.LogErr(erx.New(err))
-			return
 		}
+
+		if err := usersDb.Close(); err != nil {
+			tools.LogErr(erx.New(err))
+		}
+
+		if err := logfilesDb.Close(); err != nil {
+			tools.LogErr(erx.New(err))
+		}
+
+
 
 	default:
 		fmt.Println("Expected flag (-f)")

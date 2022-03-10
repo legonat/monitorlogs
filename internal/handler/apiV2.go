@@ -1,14 +1,13 @@
-package v2
+package handler
 
 import (
 	"database/sql"
 	"github.com/gin-gonic/gin"
 	"monitorlogs/internal/auth"
 	"monitorlogs/internal/config"
-	"monitorlogs/internal/db"
-	models2 "monitorlogs/internal/models"
+	"monitorlogs/internal/models"
 	"monitorlogs/pkg/erx"
-	tools2 "monitorlogs/pkg/tools"
+	"monitorlogs/pkg/tools"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,140 +15,143 @@ import (
 	"time"
 )
 
-func Login(c *gin.Context) {
-	var checkInputs models2.LoginInputs
-	err := c.ShouldBindJSON(&checkInputs)
+func (h *Handler) Login(c *gin.Context) {
+	var loginInputs models.LoginInputs
+	err := c.ShouldBindJSON(&loginInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough inputs"})
 		return
 	}
 	fingerprint := c.GetHeader("Fingerprint")
 	if fingerprint == "" {
-		tools2.LogErr(erx.NewError(0, "No fingerprint data"))
+		tools.LogErr(erx.NewError(0, "No fingerprint data"))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough inputs"})
 		return
 	}
-	ip := c.ClientIP()
-	ua := c.Request.UserAgent()
-	err = db.Check(checkInputs.Login, []byte(checkInputs.Password), ip)
+	loginInputs.Ip = c.ClientIP()
+	err = h.repository.Check(loginInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid password"})
 		return
 	}
-	err = db.TryDeleteOldSession(fingerprint, ip)
+	err = h.repository.TryDeleteOldSession(fingerprint, loginInputs.Ip)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to authorise"})
 		return
 	}
-	err = db.CheckSessionsCount(checkInputs.Login, ip)
+	err = h.repository.CheckSessionsCount(loginInputs.Login, loginInputs.Ip)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 	}
 
-	rToken, err := auth.CreateRefreshToken()
+	refreshSession :=  models.RefreshSession{Login: loginInputs.Login, Ip: loginInputs.Ip, Fingerprint: fingerprint}
+	refreshSession.Token, err = auth.CreateRefreshToken()
+	refreshSession.Ua = c.Request.UserAgent()
 	domain, daysUntilExpire, err := getConfig()
-	if !checkInputs.RememberMe {
+	if !loginInputs.RememberMe {
 		daysUntilExpire = 1
 	}
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusForbidden, gin.H{"error": "Unable to Refresh token"})
 		return
 	}
-	err = db.WriteRefreshToken(checkInputs.Login, rToken, ua, fingerprint, ip, daysUntilExpire)
+	err = h.repository.WriteRefreshToken(refreshSession, daysUntilExpire)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to authorise"})
 		return
 	}
 
-	c.SetCookie("rToken", rToken, daysUntilExpire*60*60*24, "/", domain, false, true)
-	c.JSON(http.StatusOK, gin.H{"success": true, "refreshToken": rToken})
+	c.SetCookie("rToken", refreshSession.Token, daysUntilExpire*60*60*24, "/", domain, false, true)
+	c.JSON(http.StatusOK, gin.H{"success": true, "refreshToken": refreshSession.Token})
 }
 
-func Register(c *gin.Context) {
-	var checkInputs models2.RegisterInputs
-	err := c.ShouldBindJSON(&checkInputs)
+func (h *Handler) Register(c *gin.Context) {
+	var registerInputs models.RegisterInputs
+	err := c.ShouldBindJSON(&registerInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough inputs"})
 		return
 	}
-	ip := c.ClientIP()
-	err = db.Register(checkInputs.Login, []byte(checkInputs.Password), ip)
+	registerInputs.Ip = c.ClientIP()
+	err = h.repository.Register(registerInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "User is already registered"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
-func Block(c *gin.Context) {
+func (h *Handler) Block(c *gin.Context) {
 
-	ip := c.ClientIP()
-	var blockInputs models2.BlockInputs
+	var blockInputs models.BlockInputs
 	err := c.ShouldBindJSON(&blockInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough inputs"})
 		return
 	}
+	blockInputs.Ip = c.ClientIP()
 
-	err = db.Block(blockInputs.Login, ip)
+	err = h.repository.Block(blockInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to block user"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
-func Unblock(c *gin.Context) {
+func (h *Handler) Unblock(c *gin.Context) {
 
-	ip := c.ClientIP()
-	var unblockInputs models2.BlockInputs
+	var unblockInputs models.BlockInputs
 	err := c.ShouldBindJSON(&unblockInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough inputs"})
 		return
 	}
-	err = db.Unblock(unblockInputs.Login, ip)
+	unblockInputs.Ip= c.ClientIP()
+	err = h.repository.Unblock(unblockInputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to unblock user"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
-func Auth(c *gin.Context) {
+func (h *Handler) Auth(c *gin.Context) {
 
-	fingerprint := c.GetHeader("Fingerprint")
-
-	refreshToken, err := c.Cookie("rToken")
-	if err != nil {
-		tools2.LogWarn("No Cookies")
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to Refresh token"})
-		return
-	}
+	var inputs models.RefreshSession
+	inputs.Fingerprint = c.GetHeader("Fingerprint")
 
 	domain, _, err := getConfig()
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to Refresh token"})
 		return
 	}
 
-	ip := c.ClientIP()
-	ua := c.Request.UserAgent()
-	login, daysUntilExpire, err := db.CheckRefreshToken(refreshToken, fingerprint, ip)
+	inputs.Token, err = c.Cookie("rToken")
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogWarn("No Cookies")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to Refresh token"})
+		return
+	}
+
+	inputs.Ip = c.ClientIP()
+	inputs.Ua = c.Request.UserAgent()
+	var daysUntilExpire int
+	inputs.Login, daysUntilExpire, err = h.repository.CheckRefreshToken(inputs)
+	if err != nil {
+		tools.LogErr(err)
 		if err == sql.ErrNoRows {
 			c.SetCookie("rToken", "", -1, "/", domain, false, true)
 		}
@@ -157,9 +159,18 @@ func Auth(c *gin.Context) {
 		return
 	}
 
-	aToken, rToken, err := auth.RefreshSession(login, ua, fingerprint, ip, daysUntilExpire)
+	aToken, rToken, err := auth.RefreshSession(inputs, daysUntilExpire)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to Refresh token"})
+		return
+	}
+
+	inputs.Token = rToken
+
+	err = h.repository.WriteRefreshToken(inputs, daysUntilExpire)
+	if err != nil {
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to Refresh token"})
 		return
 	}
@@ -168,24 +179,24 @@ func Auth(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "accessToken": aToken, "refreshToken": rToken})
 }
 
-func Logout(c *gin.Context) {
+func (h *Handler) Logout(c *gin.Context) {
 
 	refreshToken, err := c.Cookie("rToken")
 	if err != nil {
-		tools2.LogWarn("No Cookies")
+		tools.LogWarn("No Cookies")
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 	ip := c.ClientIP()
-	err = db.DeleteSession(refreshToken, ip)
+	err = h.repository.DeleteSession(refreshToken, ip)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to delete session"})
 		return
 	}
 	domain, _, err := getConfig()
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unable to Refresh token"})
 		return
 	}
@@ -193,35 +204,28 @@ func Logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
-func ExitAll(c *gin.Context) {
-
+func (h *Handler) ExitAll(c *gin.Context) {
+	var inputs models.RefreshSession
+	var err error
 	authHeader := c.GetHeader("Authorization")
-	token, err := parseHeader(authHeader)
+	inputs.Token, err = parseHeader(authHeader)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.AbortWithStatus(http.StatusUnauthorized)
 	}
-	login, err := auth.ParseToken(token)
+	inputs.Login, err = auth.ParseToken(inputs.Token)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	//
-	//exitInputs := models.ExitInputs{}
-	//err = c.ShouldBindJSON(&exitInputs)
-	//if err != nil {
-	//	tools.LogErr(erx.New(err))
-	//	c.JSON(http.StatusBadRequest, gin.H{"error": "Not enough inputs"})
-	//	return
-	//}
-	ip := c.ClientIP()
-	fingerprint := c.GetHeader("Fingerprint")
+	inputs.Ip = c.ClientIP()
+	inputs.Fingerprint = c.GetHeader("Fingerprint")
 
-	err = db.DeleteAllSessions(login, fingerprint, ip)
+	err = h.repository.DeleteAllSessions(inputs)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to delete all sessions"})
 		return
 	}
@@ -230,31 +234,31 @@ func ExitAll(c *gin.Context) {
 
 }
 
-func GetLogs(c *gin.Context) {
+func (h *Handler) GetLogs(c *gin.Context) {
 
-	logs, err := db.GetLogs()
+	logs, err := h.repository.GetLogs()
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
-func GetLogsBySession(c *gin.Context) {
+func (h *Handler) GetLogsBySession(c *gin.Context) {
 
-	reqInputs := models2.GetLogsBySessionStruct{}
+	reqInputs := models.GetLogsBySessionStruct{}
 	err := c.BindJSON(&reqInputs)
-	logs, err := db.GetLogsBySession(reqInputs.SessionId, reqInputs.Filename)
+	logs, err := h.repository.GetLogsBySession(reqInputs)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 
-	errors, err := db.GetErrorsBySession(reqInputs.SessionId, reqInputs.Filename)
+	errors, err := h.repository.GetErrorsBySession(reqInputs)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
@@ -262,37 +266,37 @@ func GetLogsBySession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs, "errors": errors})
 }
 
-func GetLogsByDate(c *gin.Context) {
+func (h *Handler) GetLogsByDate(c *gin.Context) {
 
-	reqInputs := models2.GetLogsByDateStruct{}
+	reqInputs := models.GetLogsByDateStruct{}
 	err := c.BindJSON(&reqInputs)
 
 	start, err := time.Parse(time.RFC3339, reqInputs.StartDate)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to parse date"})
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		return
 	}
-	dif := tools2.TimeFix(start.Hour())
+	dif := tools.TimeFix(start.Hour())
 	startDate := start.Add(dif)
 	end, err := time.Parse(time.RFC3339, reqInputs.EndDate)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		end = time.Unix(0, 0)
 	}
-	dif = tools2.TimeFix(end.Hour())
+	dif = tools.TimeFix(end.Hour())
 	endDate := end.Add(dif)
 	endDate = endDate.AddDate(0, 0, 1)
-	logs, err := db.GetLogsByDate(startDate, endDate, reqInputs.Filename)
+	logs, err := h.repository.GetLogsByDate(startDate, endDate, reqInputs.Filename)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 
-	errors, err := db.GetErrorsByDate(startDate, endDate, reqInputs.Filename)
+	errors, err := h.repository.GetErrorsByDate(startDate, endDate, reqInputs.Filename)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
@@ -300,22 +304,22 @@ func GetLogsByDate(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"logs": logs, "errors": errors})
 }
 
-func GetLogsBySessionWithLimit(c *gin.Context) {
+func (h *Handler) GetLogsBySessionWithLimit(c *gin.Context) {
 
-	logSlices := [3][]models2.LogStruct{}
+	logSlices := [3][]models.LogStruct{}
 
-	reqInputs := models2.GetLogsBySessionWithLimitStruct{}
+	reqInputs := models.GetLogsBySessionWithLimitStruct{}
 	err := c.BindJSON(&reqInputs)
-	logs, logsCount, err := db.GetLogsBySessionWithLimit(reqInputs.SessionId, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	logs, logsCount, err := h.repository.GetLogsBySessionWithLimit(reqInputs)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 
-	errors, errorsCount, err := db.GetErrorsBySessionWithLimit(reqInputs.SessionId, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	errors, errorsCount, err := h.repository.GetErrorsBySessionWithLimit(reqInputs)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
@@ -327,37 +331,37 @@ func GetLogsBySessionWithLimit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"backLogs": logSlices[0], "currentLogs": logSlices[1], "forwardLogs": logSlices[2], "errorsSlice": errors[1], "logsCount": logsCount, "errorsCount": errorsCount})
 }
 
-func GetLogsByDateWithLimit(c *gin.Context) {
-	logSlices := [3][]models2.LogStruct{}
-	reqInputs := models2.GetLogsByDateWithLimitStruct{}
+func (h *Handler) GetLogsByDateWithLimit(c *gin.Context) {
+	logSlices := [3][]models.LogStruct{}
+	reqInputs := models.GetLogsByDateWithLimitStruct{}
 	err := c.BindJSON(&reqInputs)
 
 	start, err := time.Parse(time.RFC3339, reqInputs.StartDate)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to parse date"})
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		return
 	}
-	dif := tools2.TimeFix(start.Hour())
+	dif := tools.TimeFix(start.Hour())
 	startDate := start.Add(dif)
 	end, err := time.Parse(time.RFC3339, reqInputs.EndDate)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		end = time.Unix(0, 0)
 	}
-	dif = tools2.TimeFix(end.Hour())
+	dif = tools.TimeFix(end.Hour())
 	endDate := end.Add(dif)
 	endDate = endDate.AddDate(0, 0, 1)
-	logs, logsCount, err := db.GetLogsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	logs, logsCount, err := h.repository.GetLogsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 
-	errors, errorsCount, err := db.GetErrorsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	errors, errorsCount, err := h.repository.GetErrorsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
@@ -368,21 +372,21 @@ func GetLogsByDateWithLimit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"backLogs": logSlices[0], "currentLogs": logSlices[1], "forwardLogs": logSlices[2], "errorsSlice": errors[1], "logsCount": logsCount, "errorsCount": errorsCount})
 }
 
-func GetErrorsBySessionWithLimit(c *gin.Context) {
-	errorSlices := [3][]models2.LogStruct{}
-	reqInputs := models2.GetLogsBySessionWithLimitStruct{}
+func (h *Handler) GetErrorsBySessionWithLimit(c *gin.Context) {
+	errorSlices := [3][]models.LogStruct{}
+	reqInputs := models.GetLogsBySessionWithLimitStruct{}
 	err := c.BindJSON(&reqInputs)
 
-	logs, logsCount, err := db.GetLogsBySessionWithLimit(reqInputs.SessionId, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	logs, logsCount, err := h.repository.GetLogsBySessionWithLimit(reqInputs)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 
-	errors, errorsCount, err := db.GetErrorsBySessionWithLimit(reqInputs.SessionId, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	errors, errorsCount, err := h.repository.GetErrorsBySessionWithLimit(reqInputs)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get errors"})
 		return
 	}
@@ -393,39 +397,39 @@ func GetErrorsBySessionWithLimit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"backErrors": errorSlices[0], "currentErrors": errorSlices[1], "forwardErrors": errorSlices[2], "logsSlice": logs[1], "logsCount": logsCount, "errorsCount": errorsCount})
 }
 
-func GetErrorsByDateWithLimit(c *gin.Context) {
+func (h *Handler) GetErrorsByDateWithLimit(c *gin.Context) {
 
-	errorSlices := [3][]models2.LogStruct{}
-	reqInputs := models2.GetLogsByDateWithLimitStruct{}
+	errorSlices := [3][]models.LogStruct{}
+	reqInputs := models.GetLogsByDateWithLimitStruct{}
 	err := c.BindJSON(&reqInputs)
 
 	start, err := time.Parse(time.RFC3339, reqInputs.StartDate)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to parse date"})
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		return
 	}
-	dif := tools2.TimeFix(start.Hour())
+	dif := tools.TimeFix(start.Hour())
 	startDate := start.Add(dif)
 	end, err := time.Parse(time.RFC3339, reqInputs.EndDate)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		end = time.Unix(0, 0)
 	}
-	dif = tools2.TimeFix(end.Hour())
+	dif = tools.TimeFix(end.Hour())
 	endDate := end.Add(dif)
 	endDate = endDate.AddDate(0, 0, 1)
 
-	logs, logsCount, err := db.GetLogsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	logs, logsCount, err := h.repository.GetLogsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get logs"})
 		return
 	}
 
-	errors, errorsCount, err := db.GetErrorsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	errors, errorsCount, err := h.repository.GetErrorsByDateWithLimit(startDate, endDate, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get errors"})
 		return
 	}
@@ -436,31 +440,31 @@ func GetErrorsByDateWithLimit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"backErrors": errorSlices[0], "currentErrors": errorSlices[1], "forwardErrors": errorSlices[2], "logsSlice": logs[1], "logsCount": logsCount, "errorsCount": errorsCount})
 }
 
-func FindLogs(c *gin.Context) {
+func (h *Handler) FindLogs(c *gin.Context) {
 
-	reqInputs := models2.FindLogsStruct{}
+	reqInputs := models.FindLogsStruct{}
 	err := c.BindJSON(&reqInputs)
 
-	logs, err := db.FindLogs(reqInputs.SearchText, reqInputs.Filename)
+	logs, err := h.repository.FindLogs(reqInputs)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to find logs"})
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"logs": logs})
 }
 
-func FindLogsWithLimit(c *gin.Context) {
+func (h *Handler) FindLogsWithLimit(c *gin.Context) {
 
-	logSlices := [3][]models2.LogStruct{}
-	reqInputs := models2.FindLogsStructWithLimit{}
+	logSlices := [3][]models.LogStruct{}
+	reqInputs := models.FindLogsStructWithLimit{}
 	err := c.BindJSON(&reqInputs)
 
-	logs, logsCount, err := db.FindLogsWithLimit(reqInputs.SearchText, reqInputs.Filename, reqInputs.Limit, reqInputs.Offset)
+	logs, logsCount, err := h.repository.FindLogsWithLimit(reqInputs)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to find logs"})
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		return
 	}
 
@@ -471,14 +475,14 @@ func FindLogsWithLimit(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"backLogs": logSlices[0], "currentLogs": logSlices[1], "forwardLogs": logSlices[2], "logsCount": logsCount})
 }
 
-func GetLogById(c *gin.Context) {
+func (h *Handler) GetLogById(c *gin.Context) {
 
-	reqInputs := models2.LogFilenameStruct{}
+	reqInputs := models.LogFilenameStruct{}
 	err := c.ShouldBindJSON(&reqInputs)
 
-	log, err := db.GetLogById(reqInputs.Id, reqInputs.LogfileName)
+	log, err := h.repository.GetLogById(reqInputs.Id, reqInputs.LogfileName)
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to find log"})
 		return
 	}
@@ -487,39 +491,39 @@ func GetLogById(c *gin.Context) {
 
 }
 
-func GetLogsSessions(c *gin.Context) {
+func (h *Handler) GetLogsSessions(c *gin.Context) {
 
-	reqInputs := models2.LogFilenameStruct{}
+	reqInputs := models.LogFilenameStruct{}
 	err := c.BindJSON(&reqInputs)
 
-	sessions, err := db.GetLogsSessions(reqInputs.LogfileName)
+	sessions, err := h.repository.GetLogsSessions(reqInputs.LogfileName)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get sessions list"})
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"sessions": sessions})
 }
 
-func GetLogsServiceInfo(c *gin.Context) {
+func (h *Handler) GetLogsServiceInfo(c *gin.Context) {
 
-	reqInputs := models2.LogFilenameStruct{}
+	reqInputs := models.LogFilenameStruct{}
 	err := c.BindJSON(&reqInputs)
 
-	services, err := db.GetLogsServiceInfo(reqInputs.LogfileName)
+	services, err := h.repository.GetLogsServiceInfo(reqInputs.LogfileName)
 	if err != nil {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get sessions list"})
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"services": services})
 }
 
-func GetLogsFilenames(c *gin.Context) {
+func (h *Handler) GetLogsFilenames(c *gin.Context) {
 
-	filenames, err := db.GetLogsFileNames()
+	filenames, err := h.repository.GetLogsFileNames()
 	if err != nil {
-		tools2.LogErr(err)
+		tools.LogErr(err)
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Unable to get sessions list"})
 		return
 	}
@@ -549,12 +553,12 @@ func getConfig() (string, int, error) {
 	//daysUntilExpire := 0
 	daysUntilExpire, err := strconv.Atoi(os.Getenv("COOKIE_MAX_AGE"))
 	if err != nil {
-		tools2.LogErr(erx.New(err))
+		tools.LogErr(erx.New(err))
 	}
 	if domain == "" || daysUntilExpire == 0 {
 		cfg := config.GetInstance()
 		if err != nil {
-			tools2.LogErr(erx.New(err))
+			tools.LogErr(erx.New(err))
 			return "", 0, err
 		}
 		domain = (*cfg).Server.Domain
@@ -563,7 +567,7 @@ func getConfig() (string, int, error) {
 	if domain == "" || daysUntilExpire == 0 {
 		cfg, err := config.GetConfig()
 		if err != nil {
-			tools2.LogErr(erx.New(err))
+			tools.LogErr(erx.New(err))
 			return "", 0, err
 		}
 		domain = cfg.Server.Domain
